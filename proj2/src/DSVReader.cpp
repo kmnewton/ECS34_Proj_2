@@ -15,7 +15,7 @@ struct CDSVReader::SImplementation {
         char c;
         bool quoted = false;
 
-        while (source->End() == false) {
+        while (!source->End()) {
             source->Get(c);
 
             if (c == '"'){
@@ -29,7 +29,7 @@ struct CDSVReader::SImplementation {
                 } else {
                     quoted = false;
                 }
-            } else if ((c == Delimiter || c == '\n')  && quoted == false){
+            } else if ((c == Delimiter || c == '\n')  && !quoted){
                 row.push_back(field);
                 field.clear();
                 if (c == '\n') {
@@ -48,7 +48,6 @@ struct CDSVReader::SImplementation {
 };
 
 CDSVReader::CDSVReader(std::shared_ptr< CDataSource > src, char delimiter) : DImplementation(std::make_unique<SImplementation>(src, delimiter)) {
-
 }
 
 CDSVReader::~CDSVReader() = default;

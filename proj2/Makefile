@@ -1,7 +1,7 @@
 CXX = g++
 CXXFLAGS = -std=c++17 -Wall -Iinclude -I/ucrt64/include
 
-LDFLAGS = -L/ucrt64/lib -lgtest -lgtest_main -lwinpthread -lexpat
+LDFLAGS = -L/ucrt64/lib -lgtest -lgtest_main -lpthread -lexpat
 
 SRC_DIR = src
 TEST_DIR = testsrc
