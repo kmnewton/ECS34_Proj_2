@@ -1,8 +1,6 @@
 #include "XMLReader.h"
 #include "XMLEntity.h"
 #include <expat.h>
-#include <vector>
-#include <memory>
 #include <stack>
 
 struct CXMLReader::SImplementation {
@@ -11,18 +9,7 @@ struct CXMLReader::SImplementation {
     std::stack<SXMLEntity> stack;
     bool dataend;
 
-    SImplementation(std::shared_ptr<CDataSource> src) : source(src), dataend(false) {
-        parser = XML_ParserCreate(nullptr);
-        XML_SetUserData(parser, this);
-        XML_SetElementHandler(parser, StartElementHandler, EndElementHandler);
-        XML_SetCharacterDataHandler(parser, CharacterDataHandler);
-    }
-
-    ~SImplementation() {
-        XML_ParserFree(parser);
-    }
-
-    static void StartElementHandler(void *data, const char *name, const char ** attributes) {
+    static void handlestart(void *data, const char *name, const char ** attributes) {
         auto * impl = static_cast<SImplementation *>(data);
         SXMLEntity ent;
         ent.DType = SXMLEntity::EType::StartElement; 
@@ -35,7 +22,7 @@ struct CXMLReader::SImplementation {
         impl->stack.push(ent);
     }
 
-    static void EndElementHandler(void * data, const char * name) {
+    static void handleend(void * data, const char * name) {
         auto *impl = static_cast<SImplementation *>(data);
         SXMLEntity ent; 
         ent.DType = SXMLEntity::EType::EndElement;
@@ -43,7 +30,7 @@ struct CXMLReader::SImplementation {
         impl->stack.push(ent);
     }
 
-    static void CharacterDataHandler(void * udata, const char * s, int length) {
+    static void handlechar(void * udata, const char * s, int length) {
         auto * impl = static_cast<SImplementation *>(udata);
         std::string data(s, length);
         if (s && length > 0) {
@@ -53,6 +40,18 @@ struct CXMLReader::SImplementation {
             impl->stack.push(ent);
         }
     }
+
+    SImplementation(std::shared_ptr<CDataSource> src) : source(src), dataend(false) {
+        parser = XML_ParserCreate(nullptr);
+        XML_SetUserData(parser, this);
+        XML_SetElementHandler(parser, handlestart, handleend);
+        XML_SetCharacterDataHandler(parser, handlechar);
+    }
+
+    ~SImplementation() {
+        XML_ParserFree(parser);
+    }
+
 
     bool ReadEntity(SXMLEntity &entity, bool skipdata = false) {
         std::vector<char> buffer(4096);
