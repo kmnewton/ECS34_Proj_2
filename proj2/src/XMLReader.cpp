@@ -1,43 +1,61 @@
 #include "XMLReader.h"
 #include "XMLEntity.h"
 #include <expat.h>
-#include <stack>
+#include <queue>
+#include <vector>
 
 struct CXMLReader::SImplementation {
     std::shared_ptr<CDataSource> source;
     XML_Parser parser;
-    std::stack<SXMLEntity> stack;
+    std::queue<SXMLEntity> queue;
+    std::string chardata;
     bool dataend;
 
     static void handlestart(void *data, const char *name, const char ** attributes) {
         auto * impl = static_cast<SImplementation *>(data);
+
+        if (!impl->chardata.empty()) {
+            SXMLEntity ent; 
+            ent.DType = SXMLEntity::EType::CharData;
+            ent.DNameData = impl->chardata;
+            impl->queue.push(ent);
+            impl->chardata.clear();
+        }
+
         SXMLEntity ent;
         ent.DType = SXMLEntity::EType::StartElement; 
         ent.DNameData = name;
 
         for (int i = 0; attributes[i]; i += 2){
-            ent.DAttributes.emplace_back(attributes[i], attributes[i + 1]);
+            if (attributes[i + 1]) {
+                ent.DAttributes.emplace_back(attributes[i], attributes[i + 1]);
+            }
         }
 
-        impl->stack.push(ent);
+        impl->queue.push(ent);
     }
 
     static void handleend(void * data, const char * name) {
         auto *impl = static_cast<SImplementation *>(data);
+
+        if (!impl->chardata.empty()) {
+            SXMLEntity ent; 
+            ent.DType = SXMLEntity::EType::CharData;
+            ent.DNameData = impl->chardata;
+            impl->queue.push(ent);
+            impl->chardata.clear();
+        }
+
         SXMLEntity ent; 
         ent.DType = SXMLEntity::EType::EndElement;
         ent.DNameData = name;
-        impl->stack.push(ent);
+        impl->queue.push(ent);
     }
 
-    static void handlechar(void * udata, const char * s, int length) {
-        auto * impl = static_cast<SImplementation *>(udata);
-        std::string data(s, length);
+    static void handlechar(void * data, const char * s, int length) {
+        auto * impl = static_cast<SImplementation *>(data);
         if (s && length > 0) {
-            SXMLEntity ent;
-            ent.DType = SXMLEntity::EType::CharData;
-            ent.DNameData = data;
-            impl->stack.push(ent);
+            impl->chardata.append(s, length);
         }
     }
 
@@ -53,30 +71,52 @@ struct CXMLReader::SImplementation {
     }
 
 
-    bool ReadEntity(SXMLEntity &entity, bool skipdata = false) {
+    bool ReadEntity(SXMLEntity &entity, bool skipCharData = false) {
         std::vector<char> buffer(4096);
-        while (!dataend) {
-            size_t bytes = source->Read(buffer, sizeof(buffer));
+
+        if (!queue.empty()) {
+            entity = queue.front();
+            queue.pop();
+
+            if (skipCharData && entity.DType == SXMLEntity::EType::CharData) {
+                return ReadEntity(entity, skipCharData);
+            }
+
+            return true;
+        }
+
+        while (!dataend && queue.empty()) {
+            size_t bytes = 0;
+
+            while (bytes < buffer.size() && !source->End()) {
+                char c;
+                if (source->Get(c)) {
+                    buffer[bytes++] = c;
+                } else {
+                    break;
+                }
+            }
             if (bytes == 0) {
                 dataend = true; 
                 return false;
             }
 
-            if (!stack.empty()) {
-                entity = stack.top();
-                stack.pop();
+            if (XML_Parse(parser, buffer.data(), bytes, bytes == 0) == XML_STATUS_ERROR) {
+                return false;
+            }
+
+            if (!queue.empty()) {
+                entity = queue.front();
+                queue.pop();
+
+                if (skipCharData && entity.DType == SXMLEntity::EType::CharData) {
+                    return ReadEntity(entity, skipCharData);
+                }
                 return true;
             }
 
-            if (XML_Parse(parser, buffer.data(), bytes, 0) == XML_STATUS_ERROR) {
-                return false;
-            }
         }
-        if (!stack.empty()) {
-            entity = stack.top();
-            stack.pop();
-            return true;
-        }
+        
         return false;
     }
 
@@ -89,7 +129,7 @@ CXMLReader::CXMLReader(std::shared_ptr<CDataSource> src) : DImplementation(std::
 CXMLReader::~CXMLReader() = default;
 
 bool CXMLReader::End() const {
-    return DImplementation->dataend && DImplementation->stack.empty();
+    return DImplementation->dataend && DImplementation->queue.empty();
 }
 
 bool CXMLReader::ReadEntity(SXMLEntity& entity, bool skipCharData) {

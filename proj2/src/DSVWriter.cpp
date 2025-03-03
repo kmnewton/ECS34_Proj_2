@@ -13,7 +13,11 @@ struct CDSVWriter::SImplementation {
         for (size_t i = 0; i < row.size(); i++){
             if (quoteall || row[i].find(delimiter) != std::string::npos || row[i].find('"') != std::string::npos) {
                 sink->Put('"');
+
                 for (char c : row[i]) {
+                    if (c == '"') {
+                        sink->Put('"');
+                    }
                     sink->Put(c);
                 }
                 sink->Put('"');
